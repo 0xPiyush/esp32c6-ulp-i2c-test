@@ -7,10 +7,7 @@
 #include <lp_core_main.h>
 #include <sdkconfig.h>
 #include <stdio.h>
-#include <time.h>
 #include <ulp_lp_core.h>
-
-#include "hal/clk_tree_ll.h"
 
 #define FILE_TAG "main"
 
