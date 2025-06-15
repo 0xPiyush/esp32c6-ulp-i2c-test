@@ -86,34 +86,50 @@ void ads1115_set_max_ticks(ads1115_t* ads, int32_t max_ticks) {
 }
 
 esp_err_t ads1115_get_raw(ads1115_t* ads, int16_t* raw) {
-    const static char* TAG = "ads1115_get_raw";
-    const static uint16_t sps[] = {8, 16, 32, 64, 128, 250, 475, 860};
-    const static uint8_t len = 2;
-    uint8_t data[2];
+    const uint16_t OS_MASK = 1u << 15; /* bit 15 in config reg */
     esp_err_t err;
-    bool tmp;  // temporary bool for reading from queue
 
-    // see if we need to send configuration data
-    if ((ads->config.bit.MODE == ADS1115_MODE_SINGLE) ||
-        (ads->changed)) {  // if it's single-ended or a setting changed
-        err = ads1115_write_register(ads, ADS1115_CONFIG_REGISTER_ADDR,
-                                     ads->config.reg);
-        if (err) {
-            // ESP_LOGE(TAG, "could not write to device: %s",
-            //          esp_err_to_name(err));
+    /* --------------------------------------------------------------------
+     * 1)  Start a conversion if we are in single-shot mode
+     *     or the application changed any ADS1115 setting.
+     * ------------------------------------------------------------------ */
+    if (ads->config.bit.MODE == ADS1115_MODE_SINGLE || ads->changed) {
+        uint16_t cfg = ads->config.reg | OS_MASK; /* OS = 1 → start */
+        err = ads1115_write_register(ads, ADS1115_CONFIG_REGISTER_ADDR, cfg);
+        if (err != ESP_OK) {
             return err;
         }
-        ads->changed = 0;  // say that the data is unchanged now
+        ads->changed = false;
     }
 
-    err =
-        ads1115_read_register(ads, ADS1115_CONVERSION_REGISTER_ADDR, data, len);
-    if (err) {
-        // ESP_LOGE(TAG, "could not read from device: %s",
-        // esp_err_to_name(err));
+    /* --------------------------------------------------------------------
+     * 2)  Wait until the conversion is done.
+     *     (OS goes low while busy and returns high when ready.)
+     * ------------------------------------------------------------------ */
+    uint8_t cfg_buf[2];
+    uint16_t cfg_rd;
+
+    do {
+        err = ads1115_read_register(ads, ADS1115_CONFIG_REGISTER_ADDR, cfg_buf,
+                                    sizeof cfg_buf);
+        if (err != ESP_OK) {
+            return err;
+        }
+        cfg_rd = ((uint16_t)cfg_buf[0] << 8) | cfg_buf[1];
+    } while ((cfg_rd & OS_MASK) == 0); /* 0 → still converting */
+
+    /* --------------------------------------------------------------------
+     * 3)  Read the freshly-finished conversion result.
+     * ------------------------------------------------------------------ */
+    uint8_t data[2];
+    err = ads1115_read_register(ads, ADS1115_CONVERSION_REGISTER_ADDR, data,
+                                sizeof data);
+    if (err != ESP_OK) {
         return err;
     }
-    *raw = ((uint16_t)data[0] << 8) | (uint16_t)data[1];
+
+    *raw = (int16_t)(((uint16_t)data[0] << 8) | data[1]);
+    return ESP_OK;
 }
 
 double ads1115_get_voltage(ads1115_t* ads) {

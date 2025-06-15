@@ -31,11 +31,19 @@ void app_main(void) {
     ESP_LOGI(TAG, "Starting LP Core Binary...");
     start_lp_core_bin();
 
-    // Wait for the LP Core to finish its initialization
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG,
+             "LP Core Binary started, Taking 100 readings from ADS1115 @ 860 "
+             "SPS...");
 
-    ESP_LOGI(TAG, "Data from the LP Core - raw: %d, error: %d",
-             (int16_t)ulp_raw_reading, (esp_err_t)ulp_err);
+    while (!(bool)ulp_done) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    ESP_LOGI(TAG,
+             "Data from the LP Core - average raw: %ld, average time taken for "
+             "each reading: %llu us, error: %d",
+             (int32_t)ulp_raw_reading, (uint64_t)ulp_time_taken_us,
+             (esp_err_t)ulp_err);
 }
 
 static void load_lp_core_bin(void) {
